@@ -153,7 +153,8 @@ fn n_queens_csp(n: u32) -> CSP {
     constraints.push(Box::new(PresentInOneCell::make_for_row(row, n)));
   }
 
-  // FIXME: how to run unique on constraints? Hash trait objects are not possible, since Hash takes generic parameter,
+  // NOTE: it's not possible trivially to run unique on a vector of Box<dyn Constraint>s:
+  // Hash trait objects are not possible, since Hash takes generic parameter,
   // thus, we cannot define Hash as Constraint's supertrait.
 
   CSP {
