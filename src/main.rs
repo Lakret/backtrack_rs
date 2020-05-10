@@ -275,7 +275,9 @@ fn backtrack_iter(assignment: Assignment, unassigned: &[Cell], csp: &CSP) -> Opt
         Some((unassigned_var, rest)) => {
           let domain = csp.domains.get(unassigned_var).unwrap();
 
-          for value in domain {
+          // need to consider domain values in reverse direction
+          // to match execution order of recursive version
+          for value in domain.iter().rev() {
             let mut candidate = assignment.clone();
             candidate.insert(*unassigned_var, *value);
 
