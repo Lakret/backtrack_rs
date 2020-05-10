@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::io;
+use std::io::Write;
 use std::time::Instant;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
@@ -39,6 +41,35 @@ impl CSP {
 }
 
 type Assignment = HashMap<Cell, bool>;
+
+fn pretty_print(n: u32, assignment: &Assignment) {
+  let ansi_reset = "\x1B[49m";
+  let light_yellow_background = "\x1B[103m";
+
+  let mut is_white = true;
+
+  for row in 0..n {
+    for col in 0..n {
+      // set background
+      let background = if is_white { ansi_reset } else { light_yellow_background };
+
+      let is_occupied = assignment.get(&Cell { row, col }).unwrap_or(&false);
+
+      if *is_occupied {
+        print!("{} Q {}", background, ansi_reset);
+      } else {
+        print!("{}   {}", background, ansi_reset);
+      }
+
+      is_white = !is_white;
+    }
+
+    is_white = !is_white;
+
+    io::stdout().flush().unwrap();
+    println!("");
+  }
+}
 
 // NOTE: constraint requires to always be debuggable to make CSP debuggable too
 trait Constraint: fmt::Debug {
@@ -233,7 +264,11 @@ fn main() {
   let solution = backtrack(HashMap::new(), &csp.variables, &csp);
   let execution_time_mcs = t.elapsed().as_micros();
   println!("Solved in {} µs.", execution_time_mcs);
-  println!("Solution = {:?}", solution);
+
+  match solution {
+    Some(solution) => pretty_print(n, &solution),
+    None => println!("No solution."),
+  }
 }
 
 #[cfg(test)]
