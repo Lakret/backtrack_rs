@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::time::Instant;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 struct Cell {
@@ -14,12 +15,35 @@ struct CSP {
   constraints: Vec<Box<dyn Constraint>>,
 }
 
+impl CSP {
+  /// Checks if all constraints are satisfied & all variables are assigned
+  fn is_solved(&self, assignment: &Assignment) -> bool {
+    assignment.len() == self.variables.len()
+      && self
+        .constraints
+        .iter()
+        .all(|constraint| constraint.is_satisfied(assignment))
+  }
+
+  /// Checks if possibly partial assignment is consistent.
+  fn is_consistent(&self, assignment: &Assignment) -> bool {
+    self.constraints.iter().all(|constraint| {
+      // only test constraints all arguments of which are assigned
+      if constraint.arguments().iter().all(|arg| assignment.contains_key(arg)) {
+        constraint.is_satisfied(assignment)
+      } else {
+        true
+      }
+    })
+  }
+}
+
 type Assignment = HashMap<Cell, bool>;
 
 // NOTE: constraint requires to always be debuggable to make CSP debuggable too
 trait Constraint: fmt::Debug {
   fn arguments(&self) -> Vec<Cell>;
-  fn satisfies(&self, assignment: &Assignment) -> bool;
+  fn is_satisfied(&self, assignment: &Assignment) -> bool;
 }
 
 /// Verifies that queens are not present at the same time
@@ -35,7 +59,7 @@ impl Constraint for NotPresentInBothCells {
     vec![self.curr_cell, self.another_cell]
   }
 
-  fn satisfies(&self, assignment: &Assignment) -> bool {
+  fn is_satisfied(&self, assignment: &Assignment) -> bool {
     match assignment.get(&self.curr_cell) {
       None => true,
       Some(false) => true,
@@ -66,7 +90,7 @@ impl Constraint for PresentInOneCell {
     self.cells.clone()
   }
 
-  fn satisfies(&self, assignment: &Assignment) -> bool {
+  fn is_satisfied(&self, assignment: &Assignment) -> bool {
     let placed = self
       .cells
       .iter()
@@ -107,12 +131,12 @@ fn n_queens_csp(n: u32) -> CSP {
 
       // same column constraints
       for row in 0..n {
-        if row != cell.col {
+        if row != cell.row {
           curr_cell_constraints.push(Box::new(NotPresentInBothCells {
             curr_cell: cell.clone(),
             another_cell: Cell {
               row: row,
-              col: cell.row,
+              col: cell.col,
             },
           }));
         }
@@ -164,15 +188,52 @@ fn n_queens_csp(n: u32) -> CSP {
   }
 }
 
+// TODO: basic recursive version of backtracking (should be runnable for small N,
+// and will demonstrate the overflow), and then the stack version
+// comparison to elixir in terms of generality, verbosity, and performance
+
+fn backtrack(assignment: Assignment, unassigned: &[Cell], csp: &CSP) -> Option<Assignment> {
+  //   println!("unassigned = {:?}, assignment = {:?}", unassigned, assignment);
+  match unassigned.split_first() {
+    None => Some(assignment),
+    Some((unassigned_var, rest)) => {
+      let domain = csp.domains.get(unassigned_var).unwrap();
+
+      for value in domain {
+        let mut candidate = assignment.clone();
+        candidate.insert(*unassigned_var, *value);
+
+        if csp.is_consistent(&candidate) {
+          match backtrack(candidate, rest, csp) {
+            None => continue,
+            Some(solution) => return Some(solution),
+          }
+        } else {
+          continue;
+        }
+      }
+
+      None
+    }
+  }
+}
+
 fn main() {
-  let csp = n_queens_csp(8);
+  let n = 8;
+  let csp = n_queens_csp(n);
 
   println!(
-    "8 queens CSP total vars = {}, total constraints = {}",
+    "{} queens CSP total vars = {}, total constraints = {}",
+    n,
     csp.variables.len(),
     csp.constraints.len()
   );
-  //   println!("8 queens CSP:\n{:?}", csp);
+
+  let t = Instant::now();
+  let solution = backtrack(HashMap::new(), &csp.variables, &csp);
+  let execution_time_mcs = t.elapsed().as_micros();
+  println!("Solved in {} µs.", execution_time_mcs);
+  println!("Solution = {:?}", solution);
 }
 
 #[cfg(test)]
@@ -196,13 +257,13 @@ mod tests {
     assignment.insert(top_left, true);
     assignment.insert(unrelated_place, true);
 
-    assert!(constraint.satisfies(&assignment));
+    assert!(constraint.is_satisfied(&assignment));
 
     assignment.insert(next_to_top_left, false);
-    assert!(constraint.satisfies(&assignment));
+    assert!(constraint.is_satisfied(&assignment));
 
     assignment.insert(next_to_top_left, true);
-    assert!(!constraint.satisfies(&assignment));
+    assert!(!constraint.is_satisfied(&assignment));
   }
 
   #[test]
@@ -215,18 +276,57 @@ mod tests {
 
     let mut assignment = HashMap::new();
     // no queens are placed yet => not satisfied
-    assert!(!constraint.satisfies(&assignment));
+    assert!(!constraint.is_satisfied(&assignment));
 
     assignment.insert(unrelated_place, true);
     // no queens in the row under consideration => not satisfied
-    assert!(!constraint.satisfies(&assignment));
+    assert!(!constraint.is_satisfied(&assignment));
 
     assignment.insert(Cell { row: 0, col: 3 }, true);
     // exactly 1 queen in the row => satisfied
-    assert!(constraint.satisfies(&assignment));
+    assert!(constraint.is_satisfied(&assignment));
 
     assignment.insert(Cell { row: 0, col: 6 }, true);
     // more than 1 queen in the row => not satisfied
-    assert!(!constraint.satisfies(&assignment));
+    assert!(!constraint.is_satisfied(&assignment));
+  }
+
+  #[test]
+  fn is_consistent_and_is_solved_work() {
+    let csp = n_queens_csp(4);
+
+    let mut assignment = HashMap::new();
+    assignment.insert(Cell { row: 0, col: 0 }, false);
+    assignment.insert(Cell { row: 0, col: 1 }, true);
+    assignment.insert(Cell { row: 0, col: 2 }, false);
+    assignment.insert(Cell { row: 0, col: 3 }, false);
+
+    assignment.insert(Cell { row: 1, col: 0 }, false);
+    assignment.insert(Cell { row: 1, col: 1 }, false);
+    assignment.insert(Cell { row: 1, col: 2 }, false);
+    assignment.insert(Cell { row: 1, col: 3 }, true);
+
+    assert!(csp.is_consistent(&assignment));
+    assert!(!csp.is_solved(&assignment));
+
+    assignment.insert(Cell { row: 0, col: 0 }, true);
+
+    assert!(!csp.is_consistent(&assignment));
+    assert!(!csp.is_solved(&assignment));
+
+    assignment.insert(Cell { row: 0, col: 0 }, false);
+
+    assignment.insert(Cell { row: 2, col: 0 }, true);
+    assignment.insert(Cell { row: 2, col: 1 }, false);
+    assignment.insert(Cell { row: 2, col: 2 }, false);
+    assignment.insert(Cell { row: 2, col: 3 }, false);
+
+    assignment.insert(Cell { row: 3, col: 0 }, false);
+    assignment.insert(Cell { row: 3, col: 1 }, false);
+    assignment.insert(Cell { row: 3, col: 2 }, true);
+    assignment.insert(Cell { row: 3, col: 3 }, false);
+
+    assert!(csp.is_consistent(&assignment));
+    assert!(csp.is_solved(&assignment));
   }
 }
