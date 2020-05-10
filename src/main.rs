@@ -247,18 +247,14 @@ fn backtrack(assignment: Assignment, unassigned: &[Cell], csp: &CSP) -> Option<A
   }
 }
 
-enum RecursionState<'a> {
-  Proceed {
-    assignment: Assignment,
-    unassigned: &'a [Cell],
-    csp: &'a CSP,
-  },
+struct StackFrame<'a> {
+  assignment: Assignment,
+  unassigned: &'a [Cell],
+  csp: &'a CSP,
 }
 
 fn backtrack_iter(assignment: Assignment, unassigned: &[Cell], csp: &CSP) -> Option<Assignment> {
-  use RecursionState::*;
-
-  let mut stack = vec![Proceed {
+  let mut stack = vec![StackFrame {
     assignment,
     unassigned,
     csp,
@@ -266,7 +262,7 @@ fn backtrack_iter(assignment: Assignment, unassigned: &[Cell], csp: &CSP) -> Opt
 
   while let Some(state) = stack.pop() {
     match state {
-      Proceed {
+      StackFrame {
         assignment,
         unassigned,
         csp,
@@ -282,7 +278,7 @@ fn backtrack_iter(assignment: Assignment, unassigned: &[Cell], csp: &CSP) -> Opt
             candidate.insert(*unassigned_var, *value);
 
             if csp.is_consistent(&candidate) {
-              stack.push(Proceed {
+              stack.push(StackFrame {
                 assignment: candidate,
                 unassigned: rest,
                 csp,
