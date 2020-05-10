@@ -239,14 +239,62 @@ fn backtrack(assignment: Assignment, unassigned: &[Cell], csp: &CSP) -> Option<A
             None => continue,
             Some(solution) => return Some(solution),
           }
-        } else {
-          continue;
         }
       }
 
       None
     }
   }
+}
+
+enum RecursionState<'a> {
+  Proceed {
+    assignment: Assignment,
+    unassigned: &'a [Cell],
+    csp: &'a CSP,
+  },
+}
+
+fn backtrack_iter(assignment: Assignment, unassigned: &[Cell], csp: &CSP) -> Option<Assignment> {
+  use RecursionState::*;
+
+  let mut stack = vec![Proceed {
+    assignment,
+    unassigned,
+    csp,
+  }];
+
+  while let Some(state) = stack.pop() {
+    match state {
+      Proceed {
+        assignment,
+        unassigned,
+        csp,
+      } => match unassigned.split_first() {
+        None => return Some(assignment),
+        Some((unassigned_var, rest)) => {
+          let domain = csp.domains.get(unassigned_var).unwrap();
+
+          for value in domain {
+            let mut candidate = assignment.clone();
+            candidate.insert(*unassigned_var, *value);
+
+            if csp.is_consistent(&candidate) {
+              stack.push(Proceed {
+                assignment: candidate,
+                unassigned: rest,
+                csp,
+              });
+            } else {
+              continue;
+            }
+          }
+        }
+      },
+    }
+  }
+
+  None
 }
 
 fn main() {
@@ -265,9 +313,26 @@ fn main() {
   let execution_time_mcs = t.elapsed().as_micros();
   println!("Solved in {} µs.", execution_time_mcs);
 
-  match solution {
+  match solution.clone() {
     Some(solution) => pretty_print(n, &solution),
     None => println!("No solution."),
+  }
+
+  let t = Instant::now();
+  let solution2 = backtrack_iter(HashMap::new(), &csp.variables, &csp);
+  let execution_time_mcs = t.elapsed().as_micros();
+
+  println!("Solved with iteration in {} µs.", execution_time_mcs);
+
+  match solution2.clone() {
+    Some(solution2) => pretty_print(n, &solution2),
+    None => println!("No solution."),
+  }
+
+  if (solution == solution2) {
+    println!("Solutions match!");
+  } else {
+    println!("Solutions don't match!");
   }
 }
 
