@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::hash;
 use std::io;
 use std::io::Write;
 use std::time::Instant;
@@ -10,16 +11,28 @@ struct Cell {
   col: u32,
 }
 
-#[derive(Debug)]
-struct CSP {
-  variables: Vec<Cell>,
-  domains: HashMap<Cell, Vec<bool>>,
-  constraints: Vec<Box<dyn Constraint>>,
+// NOTE: constraint requires to always be debuggable to make CSP debuggable too
+trait Constraint: fmt::Debug {
+  type Var;
+  type Domain;
+
+  fn arguments(&self) -> Vec<Self::Var>;
+  fn is_satisfied(&self, assignment: &Assignment<Self::Var, Self::Domain>) -> bool;
 }
 
-impl CSP {
+#[derive(Debug)]
+struct CSP<Var, Domain> {
+  variables: Vec<Var>,
+  domains: HashMap<Var, Vec<Domain>>,
+  constraints: Vec<Box<dyn Constraint<Var = Var, Domain = Domain>>>,
+}
+
+impl<Var, Domain> CSP<Var, Domain>
+where
+  Var: Eq + hash::Hash,
+{
   /// Checks if all constraints are satisfied & all variables are assigned
-  fn is_solved(&self, assignment: &Assignment) -> bool {
+  fn is_solved(&self, assignment: &Assignment<Var, Domain>) -> bool {
     assignment.len() == self.variables.len()
       && self
         .constraints
@@ -28,7 +41,7 @@ impl CSP {
   }
 
   /// Checks if possibly partial assignment is consistent.
-  fn is_consistent(&self, assignment: &Assignment) -> bool {
+  fn is_consistent(&self, assignment: &Assignment<Var, Domain>) -> bool {
     self.constraints.iter().all(|constraint| {
       // only test constraints all arguments of which are assigned
       if constraint.arguments().iter().all(|arg| assignment.contains_key(arg)) {
@@ -40,9 +53,9 @@ impl CSP {
   }
 }
 
-type Assignment = HashMap<Cell, bool>;
+type Assignment<Var, Domain> = HashMap<Var, Domain>;
 
-fn pretty_print(n: u32, assignment: &Assignment) {
+fn pretty_print(n: u32, assignment: &Assignment<Cell, bool>) {
   let ansi_reset = "\x1B[49m";
   let light_yellow_background = "\x1B[103m";
 
@@ -71,12 +84,6 @@ fn pretty_print(n: u32, assignment: &Assignment) {
   }
 }
 
-// NOTE: constraint requires to always be debuggable to make CSP debuggable too
-trait Constraint: fmt::Debug {
-  fn arguments(&self) -> Vec<Cell>;
-  fn is_satisfied(&self, assignment: &Assignment) -> bool;
-}
-
 /// Verifies that queens are not present at the same time
 /// in `curr_cell` and `another_cell`.
 #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -86,11 +93,14 @@ struct NotPresentInBothCells {
 }
 
 impl Constraint for NotPresentInBothCells {
+  type Var = Cell;
+  type Domain = bool;
+
   fn arguments(&self) -> Vec<Cell> {
     vec![self.curr_cell, self.another_cell]
   }
 
-  fn is_satisfied(&self, assignment: &Assignment) -> bool {
+  fn is_satisfied(&self, assignment: &Assignment<Cell, bool>) -> bool {
     match assignment.get(&self.curr_cell) {
       None => true,
       Some(false) => true,
@@ -117,11 +127,14 @@ impl PresentInOneCell {
 }
 
 impl Constraint for PresentInOneCell {
+  type Var = Cell;
+  type Domain = bool;
+
   fn arguments(&self) -> Vec<Cell> {
     self.cells.clone()
   }
 
-  fn is_satisfied(&self, assignment: &Assignment) -> bool {
+  fn is_satisfied(&self, assignment: &Assignment<Cell, bool>) -> bool {
     let placed = self
       .cells
       .iter()
@@ -133,7 +146,7 @@ impl Constraint for PresentInOneCell {
   }
 }
 
-fn n_queens_csp(n: u32) -> CSP {
+fn n_queens_csp(n: u32) -> CSP<Cell, bool> {
   assert_ne!(n, 0);
 
   let cells = (0..n)
@@ -198,9 +211,9 @@ fn n_queens_csp(n: u32) -> CSP {
   not_present_constraints.sort();
   not_present_constraints.dedup();
 
-  let mut constraints: Vec<Box<dyn Constraint>> = not_present_constraints
+  let mut constraints: Vec<Box<dyn Constraint<Var = Cell, Domain = bool>>> = not_present_constraints
     .into_iter()
-    .map(|x| x as Box<dyn Constraint>)
+    .map(|x| x as Box<dyn Constraint<Var = Cell, Domain = bool>>)
     .collect();
 
   // add "queen should be placed in each row" constraint to make trivial solutions illegal
@@ -219,12 +232,15 @@ fn n_queens_csp(n: u32) -> CSP {
   }
 }
 
-// TODO: basic recursive version of backtracking (should be runnable for small N,
-// and will demonstrate the overflow), and then the stack version
-// comparison to elixir in terms of generality, verbosity, and performance
-
-fn backtrack(assignment: Assignment, unassigned: &[Cell], csp: &CSP) -> Option<Assignment> {
-  //   println!("unassigned = {:?}, assignment = {:?}", unassigned, assignment);
+fn backtrack<Var, Domain>(
+  assignment: Assignment<Var, Domain>,
+  unassigned: &[Var],
+  csp: &CSP<Var, Domain>,
+) -> Option<Assignment<Var, Domain>>
+where
+  Var: Eq + hash::Hash + Clone + Copy,
+  Domain: Clone + Copy,
+{
   match unassigned.split_first() {
     None => Some(assignment),
     Some((unassigned_var, rest)) => {
@@ -247,13 +263,21 @@ fn backtrack(assignment: Assignment, unassigned: &[Cell], csp: &CSP) -> Option<A
   }
 }
 
-struct StackFrame<'a> {
-  assignment: Assignment,
-  unassigned: &'a [Cell],
-  csp: &'a CSP,
+struct StackFrame<'a, Var, Domain> {
+  assignment: Assignment<Var, Domain>,
+  unassigned: &'a [Var],
+  csp: &'a CSP<Var, Domain>,
 }
 
-fn backtrack_iter(assignment: Assignment, unassigned: &[Cell], csp: &CSP) -> Option<Assignment> {
+fn backtrack_iter<Var, Domain>(
+  assignment: Assignment<Var, Domain>,
+  unassigned: &[Var],
+  csp: &CSP<Var, Domain>,
+) -> Option<Assignment<Var, Domain>>
+where
+  Var: Eq + hash::Hash + Clone + Copy,
+  Domain: Clone + Copy,
+{
   let mut stack = vec![StackFrame {
     assignment,
     unassigned,
@@ -296,7 +320,7 @@ fn backtrack_iter(assignment: Assignment, unassigned: &[Cell], csp: &CSP) -> Opt
 }
 
 fn main() {
-  let n = 8;
+  let n = 10;
   let csp = n_queens_csp(n);
 
   println!(
@@ -327,7 +351,7 @@ fn main() {
     None => println!("No solution."),
   }
 
-  if (solution == solution2) {
+  if solution == solution2 {
     println!("Solutions match!");
   } else {
     println!("Solutions don't match!");
