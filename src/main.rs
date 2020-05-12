@@ -263,6 +263,9 @@ where
   }
 }
 
+// use rayon::prelude::*;
+// TODO: try to parallelize via crossbeam channels doing workstealing from shared stack, using iterative version
+
 struct StackFrame<'a, Var, Domain> {
   assignment: Assignment<Var, Domain>,
   unassigned: &'a [Var],
