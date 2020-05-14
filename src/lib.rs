@@ -82,6 +82,66 @@ where
 }
 
 //---------------------------
+// Caching implementation
+//---------------------------
+
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hasher;
+
+fn assignment_hash<Var, Domain>(assignment: &Assignment<Var, Domain>) -> u64
+where
+  Var: Eq + hash::Hash + Clone + Copy,
+  Domain: Eq + hash::Hash + Clone + Copy,
+{
+  let mut hasher = DefaultHasher::new();
+
+  for (var, val) in assignment.iter() {
+    var.hash(&mut hasher);
+    val.hash(&mut hasher);
+  }
+
+  hasher.finish()
+}
+
+pub fn backtrack_cache<Var, Domain>(
+  assignment: Assignment<Var, Domain>,
+  unassigned: &[Var],
+  csp: &CSP<Var, Domain>,
+  rejected: &mut HashSet<u64>,
+) -> Option<Assignment<Var, Domain>>
+where
+  Var: Eq + hash::Hash + Clone + Copy,
+  Domain: Eq + hash::Hash + Clone + Copy,
+{
+  match unassigned.split_first() {
+    None => Some(assignment),
+    Some((unassigned_var, rest)) => {
+      let domain = csp.domains.get(unassigned_var).unwrap();
+
+      for value in domain {
+        let mut candidate = assignment.clone();
+        candidate.insert(*unassigned_var, *value);
+
+        let hash = assignment_hash(&candidate);
+
+        if !rejected.contains(&hash) {
+          if csp.is_consistent(&candidate) {
+            match backtrack(candidate, rest, csp) {
+              None => continue,
+              Some(solution) => return Some(solution),
+            }
+          } else {
+            rejected.insert(hash);
+          }
+        }
+      }
+
+      None
+    }
+  }
+}
+
+//---------------------------
 // Iterative implementation
 //---------------------------
 
@@ -141,64 +201,8 @@ where
 }
 
 //---------------------------
-// Caching implementation
+// Parallel implementation
 //---------------------------
-
-use std::collections::hash_map::DefaultHasher;
-use std::hash::Hasher;
-
-fn assignment_hash<Var, Domain>(assignment: &Assignment<Var, Domain>) -> u64
-where
-  Var: Eq + hash::Hash + Clone + Copy,
-  Domain: Eq + hash::Hash + Clone + Copy,
-{
-  let mut hasher = DefaultHasher::new();
-
-  for (var, val) in assignment.iter() {
-    var.hash(&mut hasher);
-    val.hash(&mut hasher);
-  }
-
-  hasher.finish()
-}
-
-pub fn backtrack_cache<Var, Domain>(
-  assignment: Assignment<Var, Domain>,
-  unassigned: &[Var],
-  csp: &CSP<Var, Domain>,
-  rejected: &mut HashSet<u64>,
-) -> Option<Assignment<Var, Domain>>
-where
-  Var: Eq + hash::Hash + Clone + Copy,
-  Domain: Eq + hash::Hash + Clone + Copy,
-{
-  match unassigned.split_first() {
-    None => Some(assignment),
-    Some((unassigned_var, rest)) => {
-      let domain = csp.domains.get(unassigned_var).unwrap();
-
-      for value in domain {
-        let mut candidate = assignment.clone();
-        candidate.insert(*unassigned_var, *value);
-
-        let hash = assignment_hash(&candidate);
-
-        if !rejected.contains(&hash) {
-          if csp.is_consistent(&candidate) {
-            match backtrack(candidate, rest, csp) {
-              None => continue,
-              Some(solution) => return Some(solution),
-            }
-          } else {
-            rejected.insert(hash);
-          }
-        }
-      }
-
-      None
-    }
-  }
-}
 
 // use rayon::prelude::*;
 // TODO: try to parallelize via crossbeam channels doing workstealing from shared stack, using iterative version
