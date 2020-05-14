@@ -4,7 +4,20 @@ version = "0.1.0"
 authors = ["Lakret <Rakuretu@gmail.com>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "backtrack_rs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "backtrack_rs"
+path = "src/main.rs"
 
 [dependencies]
 crossbeam = "*"
+
+[dev-dependencies]
+criterion = "0.3"
+
+[[bench]]
+name = "backtracking_bench"
+harness = false
