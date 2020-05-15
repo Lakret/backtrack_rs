@@ -13,6 +13,7 @@ name = "backtrack_rs"
 path = "src/main.rs"
 
 [dependencies]
+lazy_static = "1.4.0"
 crossbeam = "*"
 
 [dev-dependencies]

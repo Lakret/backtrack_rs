@@ -7,7 +7,8 @@ use std::io::Write;
 pub mod n_queens;
 
 // NOTE: constraint requires to always be debuggable to make CSP debuggable too
-pub trait Constraint: fmt::Debug {
+// Sync + Send is required for parallel versions
+pub trait Constraint: fmt::Debug + Sync + Send {
   type Var;
   type Domain;
 
@@ -207,3 +208,109 @@ where
 // use rayon::prelude::*;
 // TODO: try to parallelize via crossbeam channels doing workstealing from shared stack, using iterative version
 // TODO: AC3 optimization
+
+use std::thread;
+use std::thread::JoinHandle;
+
+use crossbeam::crossbeam_channel;
+use crossbeam::crossbeam_channel::Sender;
+
+enum Message<'a, Var, Domain> {
+  Terminate,
+  Job(StackFramePar<'a, Var, Domain>),
+}
+
+struct StackFramePar<'a, Var, Domain> {
+  assignment: Assignment<Var, Domain>,
+  unassigned: &'a [Var],
+  csp: &'a CSP<Var, Domain>,
+}
+
+pub fn backtrack_par<Var, Domain>(
+  assignment: Assignment<Var, Domain>,
+  unassigned: &'static [Var],
+  csp: &'static CSP<Var, Domain>,
+) -> Option<Assignment<Var, Domain>>
+where
+  Var: Eq + hash::Hash + Clone + Copy + Sync + Send,
+  Domain: Clone + Copy + Sync + Send,
+{
+  use Message::*;
+
+  let n_threads = 4;
+
+  let (send_work, get_work) = crossbeam_channel::unbounded();
+  let (send_result, get_result) = crossbeam_channel::unbounded();
+
+  let _pool = (0..n_threads)
+    .map(|idx| {
+      let (send_work, get_work) = (send_work.clone(), get_work.clone());
+      let send_result = send_result.clone();
+
+      thread::spawn(move || loop {
+        match get_work.recv().unwrap() {
+          Job(work_unit) => do_work(work_unit, send_work.clone(), send_result.clone()),
+          Terminate => {
+            println!("Thread {} terminating.", idx);
+            break;
+          }
+        }
+      })
+    })
+    .collect::<Vec<_>>();
+
+  let first_unit = StackFramePar {
+    assignment,
+    unassigned,
+    csp,
+  };
+
+  send_work.send(Job(first_unit)).unwrap();
+
+  let result = get_result.recv().unwrap();
+
+  for _ in 0..n_threads {
+    send_work.send(Terminate).unwrap();
+  }
+
+  result
+}
+
+fn do_work<'a, Var, Domain>(
+  work_unit: StackFramePar<'a, Var, Domain>,
+  send_work: Sender<Message<'a, Var, Domain>>,
+  send_result: Sender<Option<Assignment<Var, Domain>>>,
+) where
+  Var: Eq + hash::Hash + Clone + Copy + Sync + Send,
+  Domain: Clone + Copy + Sync + Send,
+{
+  match work_unit {
+    StackFramePar {
+      assignment,
+      unassigned,
+      csp,
+    } => match unassigned.split_first() {
+      None => send_result.send(Some(assignment)).unwrap(),
+      Some((unassigned_var, rest)) => {
+        let domain = csp.domains.get(unassigned_var).unwrap();
+
+        // need to consider domain values in reverse direction
+        // to match execution order of recursive version
+        for value in domain.iter().rev() {
+          let mut candidate = assignment.clone();
+          candidate.insert(*unassigned_var, *value);
+
+          if csp.is_consistent(&candidate) {
+            send_work
+              .send(Message::Job(StackFramePar {
+                assignment: candidate,
+                unassigned: rest,
+                csp,
+              }))
+              .unwrap();
+          }
+        }
+      }
+    },
+  }
+}

@@ -1,8 +1,13 @@
 use backtrack_rs::n_queens::*;
 use backtrack_rs::*;
 
+use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::time::Instant;
+
+lazy_static! {
+  static ref CSP_PAR: CSP<Cell, bool> = { n_queens_csp(8) };
+}
 
 fn main() {
   let n = 8;
@@ -18,13 +23,22 @@ fn main() {
   let t = Instant::now();
   let solution = backtrack(HashMap::new(), &csp.variables, &csp);
   let execution_time_mcs = t.elapsed().as_micros();
-  println!("Solved in {} µs.", execution_time_mcs);
+  println!("Solved in {} µs. (Recursive)", execution_time_mcs);
 
   match solution.clone() {
     Some(solution) => pretty_print(n, &solution),
     None => println!("No solution."),
   }
 
+  let t = Instant::now();
+  let solution = backtrack_par(HashMap::new(), &CSP_PAR.variables, &CSP_PAR);
+  let execution_time_mcs = t.elapsed().as_micros();
+  println!("Solved in {} µs. (Parallel)", execution_time_mcs);
+
+  match solution.clone() {
+    Some(solution) => pretty_print(n, &solution),
+    None => println!("No solution."),
+  }
   let t = Instant::now();
   let solution2 = backtrack_iter(HashMap::new(), &csp.variables, &csp);
   let execution_time_mcs = t.elapsed().as_micros();
