@@ -205,10 +205,6 @@ where
 // Parallel implementation
 //---------------------------
 
-// use rayon::prelude::*;
-// TODO: try to parallelize via crossbeam channels doing workstealing from shared stack, using iterative version
-// TODO: AC3 optimization
-
 use std::thread;
 use std::thread::JoinHandle;
 
@@ -276,6 +272,10 @@ where
   result
 }
 
+// TODO: instead of sending job out for each job, maintain a level variable,
+// and only send a new task to the queue
+// if the level is higher than certain value:
+// https://www.drdobbs.com/architecture-and-design/three-parallel-backtracking-designs/232300302
 fn do_work<'a, Var, Domain>(
   work_unit: StackFramePar<'a, Var, Domain>,
   send_work: Sender<Message<'a, Var, Domain>>,
@@ -314,3 +314,6 @@ fn do_work<'a, Var, Domain>(
     },
   }
 }
+
+// TODO: parallel backtracking: https://arxiv.org/pdf/1312.7626.pdf
+// TODO: AC3 optimization
