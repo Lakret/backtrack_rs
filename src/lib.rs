@@ -4,6 +4,7 @@ use std::hash;
 use std::io;
 use std::io::Write;
 
+pub mod ac3;
 pub mod n_queens;
 
 // NOTE: constraint requires to always be debuggable to make CSP debuggable too
@@ -245,7 +246,7 @@ where
 
       thread::spawn(move || loop {
         match get_work.recv().unwrap() {
-          Job(work_unit) => do_work(work_unit, send_work.clone(), send_result.clone()),
+          Job(work_unit) => do_work(work_unit, send_work.clone(), send_result.clone(), 1),
           Terminate => {
             println!("Thread {} terminating.", idx);
             break;
@@ -280,6 +281,7 @@ fn do_work<'a, Var, Domain>(
   work_unit: StackFramePar<'a, Var, Domain>,
   send_work: Sender<Message<'a, Var, Domain>>,
   send_result: Sender<Option<Assignment<Var, Domain>>>,
+  iteration: u32,
 ) where
   Var: Eq + hash::Hash + Clone + Copy + Sync + Send,
   Domain: Clone + Copy + Sync + Send,
